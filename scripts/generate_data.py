@@ -1,7 +1,7 @@
 """
 Meteor - Synthetic Data Generator
-Generates synthetic 'orders' and 'payments' datasets for testing
-data quality and anomaly detection.
+Generates synthetic 'orders', 'payments', and 'inventory' datasets
+for testing data quality and anomaly detection.
 """
 
 import random
@@ -13,6 +13,8 @@ from faker import Faker
 fake = Faker()
 
 NUM_ROWS = 1000
+NUM_PRODUCTS = 100
+NUM_WAREHOUSES = 5
 
 PAYMENT_STATUSES = ["SUCCESS", "FAILED", "PENDING"]
 CITIES = ["Mumbai", "Delhi", "Bangalore", "Chennai", "Pune", "Hyderabad", "Kolkata"]
@@ -69,6 +71,27 @@ def generate_payments(orders_df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def generate_inventory(num_products: int, num_warehouses: int) -> pd.DataFrame:
+    """Generate a synthetic inventory snapshot: one row per product per warehouse."""
+    rows = []
+
+    for product_id in range(1, num_products + 1):
+        for warehouse_id in range(1, num_warehouses + 1):
+            stock_quantity = random.randint(0, 500)
+            reorder_level = random.randint(20, 100)
+            last_updated = fake.date_time_between(start_date="-7d", end_date="now")
+
+            rows.append({
+                "product_id": product_id,
+                "warehouse_id": warehouse_id,
+                "stock_quantity": stock_quantity,
+                "reorder_level": reorder_level,
+                "last_updated": last_updated,
+            })
+
+    return pd.DataFrame(rows)
+
+
 if __name__ == "__main__":
     orders_df = generate_orders(NUM_ROWS)
     orders_df.to_csv("data/orders.csv", index=False)
@@ -77,3 +100,7 @@ if __name__ == "__main__":
     payments_df = generate_payments(orders_df)
     payments_df.to_csv("data/payments.csv", index=False)
     print(f"Generated {len(payments_df)} rows -> data/payments.csv")
+
+    inventory_df = generate_inventory(NUM_PRODUCTS, NUM_WAREHOUSES)
+    inventory_df.to_csv("data/inventory.csv", index=False)
+    print(f"Generated {len(inventory_df)} rows -> data/inventory.csv")
