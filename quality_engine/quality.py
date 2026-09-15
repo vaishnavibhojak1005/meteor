@@ -7,7 +7,7 @@ validity, allowed values, freshness, and schema drift.
 from datetime import datetime
 
 import pandas as pd
-
+import json
 
 def check_completeness(df: pd.DataFrame) -> dict:
     """Check completeness (null percentage) per column and overall."""
@@ -118,6 +118,42 @@ def check_schema(df: pd.DataFrame, expected_schema: dict) -> dict:
         "status": "FAIL" if has_drift else "PASS",
     }
 
+def load_weights(config_path: str = "quality_engine/config.json") -> dict:
+    """Load quality score weights from a JSON config file."""
+    with open(config_path, "r") as f:
+        config = json.load(f)
+    return config["weights"]
+
+
+def calculate_quality_score(
+    completeness_result: dict,
+    duplicates_result: dict,
+    validity_result: dict,
+    allowed_values_result: dict,
+    freshness_result: dict,
+    schema_result: dict,
+    weights: dict,
+) -> dict:
+    """Combine individual check results into a single weighted quality score."""
+    scores = {
+        "completeness": completeness_result["overall_completeness_score"],
+        "duplicates": 100 - duplicates_result["duplicate_percentage"],
+        "validity": 100 - validity_result["invalid_percentage"],
+        "allowed_values": 100 - allowed_values_result["invalid_percentage"],
+        "freshness": 100 if freshness_result["status"] == "PASS" else 0,
+        "schema": 100 if schema_result["status"] == "PASS" else 0,
+    }
+
+    overall_score = round(
+        sum(scores[check] * weights[check] for check in scores),
+        2,
+    )
+
+    return {
+        "individual_scores": scores,
+        "overall_quality_score": overall_score,
+        "overall_status": "PASS" if overall_score >= 90 else "FAIL",
+    }
 
 if __name__ == "__main__":
     ORDERS_BASELINE_SCHEMA = {
@@ -150,3 +186,24 @@ if __name__ == "__main__":
     df_drift = pd.read_csv("data/schema_drift_orders.csv")
     print("Clean:", check_schema(df_clean, ORDERS_BASELINE_SCHEMA))
     print("Drift:", check_schema(df_drift, ORDERS_BASELINE_SCHEMA))
+    
+    print("\n=== OVERALL QUALITY SCORE (clean orders.csv) ===")
+    weights = load_weights()
+    completeness_result = check_completeness(df_clean)
+    duplicates_result = check_duplicates(df_clean, primary_key="order_id")
+    validity_result = check_validity(df_clean, "order_amount")
+    allowed_values_result = check_allowed_values(df_clean, "payment_status", allowed_statuses)
+    freshness_result = check_freshness(df_clean, "order_date")
+    schema_result = check_schema(df_clean, ORDERS_BASELINE_SCHEMA)
+    score = calculate_quality_score(
+        completeness_result,
+        duplicates_result,
+        validity_result,
+        allowed_values_result,
+        freshness_result,
+        schema_result,
+        weights,
+    )
+    print(f"Individual scores: {score['individual_scores']}")
+    print(f"Overall quality score: {score['overall_quality_score']}%")
+    print(f"Overall status: {score['overall_status']}")

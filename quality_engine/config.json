@@ -1,0 +1,10 @@
+{
+    "weights": {
+        "completeness": 0.25,
+        "duplicates": 0.20,
+        "validity": 0.20,
+        "allowed_values": 0.15,
+        "freshness": 0.10,
+        "schema": 0.10
+    }
+}
