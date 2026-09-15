@@ -5,6 +5,7 @@ to test Meteor's data quality and anomaly detection.
 """
 
 import random
+from datetime import timedelta
 
 import pandas as pd
 
@@ -13,7 +14,7 @@ SOURCE_FILE = "data/orders.csv"
 
 def load_clean_orders() -> pd.DataFrame:
     """Load the clean synthetic orders dataset."""
-    return pd.read_csv(SOURCE_FILE)
+    return pd.read_csv(SOURCE_FILE, parse_dates=["order_date"])
 
 
 def inject_null_anomaly(df: pd.DataFrame, null_fraction: float = 0.35) -> pd.DataFrame:
@@ -56,6 +57,25 @@ def inject_volume_anomaly(df: pd.DataFrame, keep_fraction: float = 0.28) -> pd.D
     return corrupted
 
 
+def inject_freshness_anomaly(df: pd.DataFrame, stale_days: int = 60) -> pd.DataFrame:
+    """Push all order_date values far into the past, simulating a stale pipeline."""
+    corrupted = df.copy()
+    corrupted["order_date"] = corrupted["order_date"] - timedelta(days=stale_days)
+    return corrupted
+
+
+def inject_invalid_values(df: pd.DataFrame, invalid_fraction: float = 0.05) -> pd.DataFrame:
+    """Inject invalid order_amount values (negative numbers) into a fraction of rows."""
+    corrupted = df.copy()
+    num_rows = len(corrupted)
+    num_invalid = int(num_rows * invalid_fraction)
+
+    invalid_indices = random.sample(range(num_rows), num_invalid)
+    corrupted.loc[invalid_indices, "order_amount"] = corrupted.loc[invalid_indices, "order_amount"] * -1
+
+    return corrupted
+
+
 if __name__ == "__main__":
     clean_orders = load_clean_orders()
     print(f"Loaded {len(clean_orders)} clean rows from {SOURCE_FILE}")
@@ -75,3 +95,11 @@ if __name__ == "__main__":
     volume_anomaly_df = inject_volume_anomaly(clean_orders)
     volume_anomaly_df.to_csv("data/volume_anomaly_orders.csv", index=False)
     print(f"Generated {len(volume_anomaly_df)} rows -> data/volume_anomaly_orders.csv")
+
+    freshness_anomaly_df = inject_freshness_anomaly(clean_orders)
+    freshness_anomaly_df.to_csv("data/freshness_anomaly_orders.csv", index=False)
+    print(f"Generated {len(freshness_anomaly_df)} rows -> data/freshness_anomaly_orders.csv")
+
+    invalid_orders_df = inject_invalid_values(clean_orders)
+    invalid_orders_df.to_csv("data/invalid_orders.csv", index=False)
+    print(f"Generated {len(invalid_orders_df)} rows -> data/invalid_orders.csv")
