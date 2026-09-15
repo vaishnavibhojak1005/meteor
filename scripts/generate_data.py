@@ -1,7 +1,7 @@
 """
 Meteor - Synthetic Data Generator
-Generates synthetic 'orders', 'payments', and 'inventory' datasets
-for testing data quality and anomaly detection.
+Generates synthetic 'orders', 'payments', 'inventory', and 'shipments'
+datasets for testing data quality and anomaly detection.
 """
 
 import random
@@ -19,6 +19,8 @@ NUM_WAREHOUSES = 5
 PAYMENT_STATUSES = ["SUCCESS", "FAILED", "PENDING"]
 CITIES = ["Mumbai", "Delhi", "Bangalore", "Chennai", "Pune", "Hyderabad", "Kolkata"]
 PAYMENT_METHODS = ["CREDIT_CARD", "DEBIT_CARD", "UPI", "NET_BANKING", "COD"]
+CARRIERS = ["BlueDart", "Delhivery", "DTDC", "Ekart", "IndiaPost"]
+SHIPMENT_STATUSES = ["PENDING", "IN_TRANSIT", "DELIVERED", "RETURNED"]
 
 
 def generate_orders(num_rows: int) -> pd.DataFrame:
@@ -92,6 +94,35 @@ def generate_inventory(num_products: int, num_warehouses: int) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def generate_shipments(orders_df: pd.DataFrame, num_warehouses: int) -> pd.DataFrame:
+    """Generate a synthetic shipments dataset linked to orders."""
+    rows = []
+
+    for shipment_id, order_row in enumerate(orders_df.itertuples(), start=1):
+        order_id = order_row.order_id
+        warehouse_id = random.randint(1, num_warehouses)
+        carrier = random.choice(CARRIERS)
+        shipment_status = random.choice(SHIPMENT_STATUSES)
+        shipment_date = order_row.order_date + timedelta(days=random.randint(0, 2))
+
+        if shipment_status == "DELIVERED":
+            delivery_date = shipment_date + timedelta(days=random.randint(1, 7))
+        else:
+            delivery_date = None
+
+        rows.append({
+            "shipment_id": shipment_id,
+            "order_id": order_id,
+            "warehouse_id": warehouse_id,
+            "carrier": carrier,
+            "shipment_status": shipment_status,
+            "shipment_date": shipment_date,
+            "delivery_date": delivery_date,
+        })
+
+    return pd.DataFrame(rows)
+
+
 if __name__ == "__main__":
     orders_df = generate_orders(NUM_ROWS)
     orders_df.to_csv("data/orders.csv", index=False)
@@ -104,3 +135,7 @@ if __name__ == "__main__":
     inventory_df = generate_inventory(NUM_PRODUCTS, NUM_WAREHOUSES)
     inventory_df.to_csv("data/inventory.csv", index=False)
     print(f"Generated {len(inventory_df)} rows -> data/inventory.csv")
+
+    shipments_df = generate_shipments(orders_df, NUM_WAREHOUSES)
+    shipments_df.to_csv("data/shipments.csv", index=False)
+    print(f"Generated {len(shipments_df)} rows -> data/shipments.csv")
