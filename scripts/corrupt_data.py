@@ -42,6 +42,20 @@ def inject_duplicate_anomaly(df: pd.DataFrame, duplicate_fraction: float = 0.10)
     return corrupted
 
 
+def inject_schema_drift(df: pd.DataFrame) -> pd.DataFrame:
+    """Change order_amount from a numeric column to a string column with units."""
+    corrupted = df.copy()
+    corrupted["order_amount"] = corrupted["order_amount"].apply(lambda x: f"{x} INR")
+    return corrupted
+
+
+def inject_volume_anomaly(df: pd.DataFrame, keep_fraction: float = 0.28) -> pd.DataFrame:
+    """Simulate an upstream ingestion failure by keeping only a fraction of rows."""
+    num_rows_to_keep = int(len(df) * keep_fraction)
+    corrupted = df.sample(n=num_rows_to_keep, replace=False).reset_index(drop=True)
+    return corrupted
+
+
 if __name__ == "__main__":
     clean_orders = load_clean_orders()
     print(f"Loaded {len(clean_orders)} clean rows from {SOURCE_FILE}")
@@ -53,3 +67,11 @@ if __name__ == "__main__":
     duplicate_anomaly_df = inject_duplicate_anomaly(clean_orders)
     duplicate_anomaly_df.to_csv("data/duplicate_anomaly_orders.csv", index=False)
     print(f"Generated {len(duplicate_anomaly_df)} rows -> data/duplicate_anomaly_orders.csv")
+
+    schema_drift_df = inject_schema_drift(clean_orders)
+    schema_drift_df.to_csv("data/schema_drift_orders.csv", index=False)
+    print(f"Generated {len(schema_drift_df)} rows -> data/schema_drift_orders.csv")
+
+    volume_anomaly_df = inject_volume_anomaly(clean_orders)
+    volume_anomaly_df.to_csv("data/volume_anomaly_orders.csv", index=False)
+    print(f"Generated {len(volume_anomaly_df)} rows -> data/volume_anomaly_orders.csv")
