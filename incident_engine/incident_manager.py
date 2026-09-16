@@ -1,40 +1,42 @@
 """
 Meteor - Incident Manager
 Creates and manages incident lifecycle: OPEN -> ACKNOWLEDGED -> RESOLVED.
-Incidents are stored in a local JSON file for now (Phase 12 will
-migrate this to PostgreSQL).
+Incidents are stored in PostgreSQL.
 """
 
-import json
-import os
+import psycopg2
+import psycopg2.extras
 from datetime import datetime
 
-INCIDENTS_FILE = "incident_engine/incidents.json"
+DB_CONFIG = {
+    "host": "localhost",
+    "port": 5432,
+    "dbname": "meteor_db",
+    "user": "meteor_admin",
+    "password": "meteor_dev_password",
+}
 
 
-def load_incidents() -> list:
-    """Load all incidents from the JSON store."""
-    if not os.path.exists(INCIDENTS_FILE):
-        return []
-
-    with open(INCIDENTS_FILE, "r") as f:
-        return json.load(f)
+def get_connection():
+    """Create a new database connection."""
+    return psycopg2.connect(**DB_CONFIG)
 
 
-def save_incidents(incidents: list) -> None:
-    """Save the full incidents list back to the JSON store."""
-    with open(INCIDENTS_FILE, "w") as f:
-        json.dump(incidents, f, indent=2)
+def generate_incident_id() -> str:
+    """Generate the next sequential MET-INC-XXXXX ID based on existing row count."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM incidents;")
+    count = cursor.fetchone()[0]
+    cursor.close()
+    conn.close()
 
-
-def generate_incident_id(incidents: list) -> str:
-    """Generate the next sequential MET-INC-XXXXX ID."""
-    next_number = len(incidents) + 1
+    next_number = count + 1
     return f"MET-INC-{next_number:05d}"
 
 
 def create_incident(
-    dataset: str,
+    dataset_id: int,
     incident_type: str,
     severity: str,
     expected: float,
@@ -43,57 +45,92 @@ def create_incident(
     root_cause: str = "Not yet determined",
     confidence: float = 0.0,
 ) -> dict:
-    """Create a new incident and persist it."""
-    incidents = load_incidents()
+    """Create a new incident and persist it to PostgreSQL."""
+    incident_id = generate_incident_id()
 
-    incident = {
-        "incident_id": generate_incident_id(incidents),
-        "dataset": dataset,
-        "type": incident_type,
-        "severity": severity,
-        "expected": expected,
-        "actual": actual,
-        "deviation": deviation,
-        "root_cause": root_cause,
-        "confidence": confidence,
-        "status": "OPEN",
-        "created_at": datetime.now().isoformat(),
-        "acknowledged_at": None,
-        "resolved_at": None,
-    }
-
-    incidents.append(incident)
-    save_incidents(incidents)
+    conn = get_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cursor.execute(
+        """
+        INSERT INTO incidents (
+            incident_id, dataset_id, incident_type, severity,
+            expected, actual, deviation, root_cause, confidence, status
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'OPEN')
+        RETURNING *;
+        """,
+        (incident_id, dataset_id, incident_type, severity, expected, actual, deviation, root_cause, confidence),
+    )
+    incident = cursor.fetchone()
+    conn.commit()
+    cursor.close()
+    conn.close()
 
     return incident
 
 
+def get_all_incidents() -> list:
+    """Return all incidents, most recent first."""
+    conn = get_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cursor.execute("SELECT * FROM incidents ORDER BY created_at DESC;")
+    rows = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return rows
+
+
+def get_incident_by_id(incident_id: str) -> dict:
+    """Return a single incident by its ID, or None if not found."""
+    conn = get_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cursor.execute("SELECT * FROM incidents WHERE incident_id = %s;", (incident_id,))
+    row = cursor.fetchone()
+    cursor.close()
+    conn.close()
+    return row
+
+
 def acknowledge_incident(incident_id: str) -> dict:
     """Mark an incident as ACKNOWLEDGED."""
-    incidents = load_incidents()
+    conn = get_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cursor.execute(
+        """
+        UPDATE incidents
+        SET status = 'ACKNOWLEDGED', acknowledged_at = %s
+        WHERE incident_id = %s
+        RETURNING *;
+        """,
+        (datetime.now(), incident_id),
+    )
+    row = cursor.fetchone()
+    conn.commit()
+    cursor.close()
+    conn.close()
 
-    for incident in incidents:
-        if incident["incident_id"] == incident_id:
-            incident["status"] = "ACKNOWLEDGED"
-            incident["acknowledged_at"] = datetime.now().isoformat()
-            save_incidents(incidents)
-            return incident
-
-    return {"error": f"Incident {incident_id} not found"}
+    return row if row else {"error": f"Incident {incident_id} not found"}
 
 
 def resolve_incident(incident_id: str) -> dict:
     """Mark an incident as RESOLVED."""
-    incidents = load_incidents()
+    conn = get_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cursor.execute(
+        """
+        UPDATE incidents
+        SET status = 'RESOLVED', resolved_at = %s
+        WHERE incident_id = %s
+        RETURNING *;
+        """,
+        (datetime.now(), incident_id),
+    )
+    row = cursor.fetchone()
+    conn.commit()
+    cursor.close()
+    conn.close()
 
-    for incident in incidents:
-        if incident["incident_id"] == incident_id:
-            incident["status"] = "RESOLVED"
-            incident["resolved_at"] = datetime.now().isoformat()
-            save_incidents(incidents)
-            return incident
-
-    return {"error": f"Incident {incident_id} not found"}
+    return row if row else {"error": f"Incident {incident_id} not found"}
 
 
 if __name__ == "__main__":
@@ -104,14 +141,14 @@ if __name__ == "__main__":
     severity = calculate_severity(deviation)
 
     incident = create_incident(
-        dataset="orders",
+        dataset_id=1,
         incident_type="VOLUME_ANOMALY",
         severity=severity,
         expected=1200000,
         actual=340000,
         deviation=deviation,
     )
-    print(json.dumps(incident, indent=2))
+    print(dict(incident))
 
     print("\n=== ACKNOWLEDGING INCIDENT ===")
     acknowledged = acknowledge_incident(incident["incident_id"])
@@ -120,3 +157,7 @@ if __name__ == "__main__":
     print("\n=== RESOLVING INCIDENT ===")
     resolved = resolve_incident(incident["incident_id"])
     print(f"Status: {resolved['status']}, resolved_at: {resolved['resolved_at']}")
+
+    print("\n=== LISTING ALL INCIDENTS ===")
+    all_incidents = get_all_incidents()
+    print(f"Total incidents: {len(all_incidents)}")
