@@ -3,7 +3,7 @@ Meteor - Synthetic Data Generator
 Generates synthetic 'orders', 'payments', 'inventory', and 'shipments'
 datasets for testing data quality and anomaly detection.
 """
-
+import argparse
 import random
 from datetime import timedelta
 
@@ -124,7 +124,11 @@ def generate_shipments(orders_df: pd.DataFrame, num_warehouses: int) -> pd.DataF
 
 
 if __name__ == "__main__":
-    orders_df = generate_orders(NUM_ROWS)
+    parser = argparse.ArgumentParser(description="Meteor - Synthetic Data Generator")
+    parser.add_argument("--rows", type=int, default=NUM_ROWS, help="Number of order rows to generate")
+    args = parser.parse_args()
+
+    orders_df = generate_orders(args.rows)
     orders_df.to_csv("data/orders.csv", index=False)
     print(f"Generated {len(orders_df)} rows -> data/orders.csv")
 
