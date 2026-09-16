@@ -1,2 +1,0 @@
-timestamp,dataset,record_count,null_percentage,duplicate_percentage,mean_order_amount,std_order_amount,freshness_delay_hours,processing_time_seconds,schema_change_count
-2026-09-16T01:42:20.674153,orders,1000,0.0,0.0,2485.21,1428.41,3.0,0.0067,0

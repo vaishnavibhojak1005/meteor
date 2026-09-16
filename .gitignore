@@ -17,3 +17,5 @@ Thumbs.db
 
 # Generated data
 data/*.csv
+
+quality_engine/history.csv
