@@ -5,7 +5,7 @@ Exposes Meteor's data quality and incident data via a REST API.
 
 import psycopg2
 import psycopg2.extras
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 
 app = FastAPI(title="Meteor API", version="0.1.0")
 
@@ -40,3 +40,19 @@ def get_datasets():
     conn.close()
 
     return {"datasets": rows}
+
+
+@app.get("/datasets/{dataset_id}")
+def get_dataset_by_id(dataset_id: int):
+    """Return a single dataset by its ID."""
+    conn = get_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cursor.execute("SELECT * FROM datasets WHERE dataset_id = %s;", (dataset_id,))
+    row = cursor.fetchone()
+    cursor.close()
+    conn.close()
+
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"Dataset {dataset_id} not found")
+
+    return row
