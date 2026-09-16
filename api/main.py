@@ -158,5 +158,35 @@ def get_dataset_anomalies(dataset_id: int):
 
     current_record_count = len(df)
     anomaly_result = detect_volume_anomaly(dataset_name, current_record_count)
+    
+@app.get("/datasets/{dataset_id}/schema")
+def get_dataset_schema(dataset_id: int):
+    """Return schema drift check results for a dataset."""
+    conn = get_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cursor.execute("SELECT * FROM datasets WHERE dataset_id = %s;", (dataset_id,))
+    dataset = cursor.fetchone()
+    cursor.close()
+    conn.close()
+
+    if dataset is None:
+        raise HTTPException(status_code=404, detail=f"Dataset {dataset_id} not found")
+
+    dataset_name = dataset["name"]
+    file_path = f"data/{dataset_name}.csv"
+
+    try:
+        df = pd.read_csv(file_path)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Data file not found: {file_path}")
+
+    schema_result = check_schema(df, ORDERS_BASELINE_SCHEMA)
+
+    return {
+        "dataset": dataset_name,
+        "schema_check": schema_result,
+    }
+
+
 
     return anomaly_result
