@@ -46,13 +46,13 @@ def detect_volume_anomaly(dataset_name: str, current_record_count: int) -> dict:
 
     return {
         "dataset": dataset_name,
-        "current_record_count": current_record_count,
-        "expected_mean": mean,
-        "expected_std": std,
-        "deviation_percentage": deviation_pct,
-        "z_score": z_score,
+        "current_record_count": int(current_record_count),
+        "expected_mean": float(mean),
+        "expected_std": float(std),
+        "deviation_percentage": float(deviation_pct),
+        "z_score": float(z_score),
         "threshold": Z_SCORE_THRESHOLD,
-        "is_anomaly": is_anomaly,
+        "is_anomaly": bool(is_anomaly),
         "status": "ANOMALY" if is_anomaly else "NORMAL",
     }
 
