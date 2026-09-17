@@ -36,3 +36,16 @@ restriction, not a permissions issue.
 
 **Next step:** retry `aws glue create-job` in a future session; if still
 blocked, contact AWS Support for a new-account service limit review.
+
+## Kinesis (Phase 21) — Tested and Torn Down
+
+Created a real Kinesis Data Stream (`meteor-orders-stream`, 1 shard),
+verified a full producer -> consumer cycle with `boto3`:
+- Producer sent 10 simulated order events, partitioned by city
+- Consumer read all 10 back in order via shard iterator (TRIM_HORIZON)
+- Amount-based anomaly detection correctly flagged 1/10 events
+
+Stream deleted immediately after testing to avoid ongoing per-shard
+hourly cost (Kinesis is not part of AWS free tier, unlike S3/Lambda).
+
+**Scripts:** `streaming/kinesis_producer.py`, `streaming/kinesis_consumer.py`
