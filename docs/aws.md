@@ -49,3 +49,14 @@ Stream deleted immediately after testing to avoid ongoing per-shard
 hourly cost (Kinesis is not part of AWS free tier, unlike S3/Lambda).
 
 **Scripts:** `streaming/kinesis_producer.py`, `streaming/kinesis_consumer.py`
+
+## Athena (Phase 23) — Working
+
+Created Glue Data Catalog database (`meteor_db`) and an external table
+(`orders_processed`) pointing to S3 Parquet data. Ran a real SQL
+aggregation query (GROUP BY payment_status) — succeeded in 549ms,
+scanning only 344 bytes (Parquet's columnar format meant only the
+queried column was read). Cost: effectively $0.
+
+Note: Glue Data Catalog operations work fine on this account; only
+Glue ETL *job creation* is currently blocked (see Phase 20 section).
