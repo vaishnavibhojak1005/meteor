@@ -60,3 +60,25 @@ queried column was read). Cost: effectively $0.
 
 Note: Glue Data Catalog operations work fine on this account; only
 Glue ETL *job creation* is currently blocked (see Phase 20 section).
+
+## SNS (Phase 24) — Working
+
+Created SNS topic `meteor-alerts`, subscribed email for real-time
+incident notifications. Sent a test alert matching the exact format
+from the project plan (severity, dataset, deviation, root cause,
+incident ID) - delivered successfully to inbox.
+
+**Note:** Gmail's automatic security link-scanning can interfere
+with SNS email confirmation links if the wrong link is clicked
+(see docs/troubleshooting.md).
+
+## SNS (Phase 24) — Working
+
+Created SNS topic `meteor-alerts`, subscribed email for real-time
+incident notifications. Sent a test alert matching the exact format
+from the project plan (severity, dataset, deviation, root cause,
+incident ID) - delivered successfully to inbox.
+
+**Note:** Gmail's automatic security link-scanning can interfere
+with SNS email confirmation links if the wrong link is clicked
+(see docs/troubleshooting.md).

@@ -1,0 +1,16 @@
+METEOR ALERT
+
+Severity:
+CRITICAL
+
+Dataset:
+orders
+
+Volume deviation:
+-71%
+
+Likely Cause:
+Upstream ingestion failure
+
+Incident:
+MET-INC-00001
