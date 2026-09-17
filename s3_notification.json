@@ -1,0 +1,19 @@
+{
+  "LambdaFunctionConfigurations": [
+    {
+      "Id": "meteor-raw-upload-trigger",
+      "LambdaFunctionArn": "arn:aws:lambda:us-east-1:397781772486:function:meteor-s3-trigger-test",
+      "Events": ["s3:ObjectCreated:*"],
+      "Filter": {
+        "Key": {
+          "FilterRules": [
+            {
+              "Name": "prefix",
+              "Value": "raw/"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
