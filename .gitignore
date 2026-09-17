@@ -25,3 +25,5 @@ quality_engine/history.csv
 response.json
 
 data/processed/
+
+streaming/local_stream.jsonl
