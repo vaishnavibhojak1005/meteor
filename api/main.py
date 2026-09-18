@@ -9,6 +9,7 @@ import pandas as pd
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+from lineage.lineage_manager import get_full_downstream_impact, get_dataset_name
 
 from quality_engine.quality import (
     check_allowed_values,
@@ -447,3 +448,18 @@ def resolve_incident_endpoint(
         )
 
     return clean_row(dict(result))
+
+@app.get("/datasets/{dataset_id}/lineage")
+def get_dataset_lineage(dataset_id: int):
+    """Return all downstream datasets affected if this dataset fails."""
+    dataset_name = get_dataset_name(dataset_id)
+    if dataset_name == "UNKNOWN":
+        raise HTTPException(status_code=404, detail=f"Dataset {dataset_id} not found")
+
+    downstream = get_full_downstream_impact(dataset_id)
+
+    return {
+        "dataset": dataset_name,
+        "downstream_impact": downstream,
+        "affected_count": len(downstream),
+    }    
