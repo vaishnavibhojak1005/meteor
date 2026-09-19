@@ -27,3 +27,5 @@ response.json
 data/processed/
 
 streaming/local_stream.jsonl
+
+data/quarantine/
