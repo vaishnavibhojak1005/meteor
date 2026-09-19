@@ -1,17 +1,26 @@
 """
 Meteor - Incident Manager
 Creates and manages incident lifecycle: OPEN -> ACKNOWLEDGED -> RESOLVED.
-Incidents are stored in PostgreSQL.
+Incidents are stored in PostgreSQL. Includes retry-with-backoff for
+database connections and structured logging of key events.
 """
+
+import logging
+import os
+import time
+from datetime import datetime
 
 import psycopg2
 import psycopg2.extras
-from datetime import datetime
-import os
-
 from dotenv import load_dotenv
 
 load_dotenv()
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger("meteor")
 
 DB_CONFIG = {
     "host": os.getenv("DB_HOST"),
@@ -22,9 +31,24 @@ DB_CONFIG = {
 }
 
 
-def get_connection():
-    """Create a new database connection."""
-    return psycopg2.connect(**DB_CONFIG)
+def get_connection(max_retries: int = 3):
+    """Create a new database connection, retrying with exponential backoff."""
+    last_error = None
+
+    for attempt in range(max_retries):
+        try:
+            conn = psycopg2.connect(**DB_CONFIG)
+            if attempt > 0:
+                logger.info(f"DB connection recovered on attempt {attempt + 1}")
+            return conn
+        except psycopg2.OperationalError as e:
+            last_error = e
+            wait_time = 2 ** attempt
+            logger.warning(f"DB connection attempt {attempt + 1} failed. Retrying in {wait_time}s...")
+            time.sleep(wait_time)
+
+    logger.error(f"DB connection failed after {max_retries} attempts: {last_error}")
+    raise ConnectionError(f"Could not connect to database after {max_retries} attempts: {last_error}")
 
 
 def generate_incident_id() -> str:
@@ -71,6 +95,8 @@ def create_incident(
     cursor.close()
     conn.close()
 
+    logger.info(f"incident_created: {incident_id} severity={severity} dataset_id={dataset_id}")
+
     return incident
 
 
@@ -114,6 +140,9 @@ def acknowledge_incident(incident_id: str) -> dict:
     cursor.close()
     conn.close()
 
+    if row:
+        logger.info(f"incident_acknowledged: {incident_id}")
+
     return row if row else {"error": f"Incident {incident_id} not found"}
 
 
@@ -134,6 +163,9 @@ def resolve_incident(incident_id: str) -> dict:
     conn.commit()
     cursor.close()
     conn.close()
+
+    if row:
+        logger.info(f"incident_resolved: {incident_id}")
 
     return row if row else {"error": f"Incident {incident_id} not found"}
 
