@@ -2,16 +2,16 @@
 Meteor - FastAPI Backend
 Exposes Meteor's data quality and incident data via a REST API.
 """
+
+import logging
 import os
-from dotenv import load_dotenv
-load_dotenv()
+
 import psycopg2
 import psycopg2.extras
 import pandas as pd
-from fastapi.middleware.cors import CORSMiddleware
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-from lineage.lineage_manager import get_full_downstream_impact, get_dataset_name
+from fastapi.middleware.cors import CORSMiddleware
 
 from quality_engine.quality import (
     check_allowed_values,
@@ -23,17 +23,7 @@ from quality_engine.quality import (
     calculate_quality_score,
     load_weights,
 )
-
-from quality_engine.profiler import (
-    profile_structure,
-    profile_nulls,
-    profile_unique_values,
-    profile_numeric_stats,
-    profile_timestamp_columns,
-)
-
 from anomaly_engine.statistical import detect_volume_anomaly
-
 from incident_engine.incident_manager import (
     create_incident,
     get_all_incidents,
@@ -41,12 +31,17 @@ from incident_engine.incident_manager import (
     acknowledge_incident,
     resolve_incident,
 )
+from lineage.lineage_manager import get_full_downstream_impact, get_dataset_name
 
+load_dotenv()
 
-app = FastAPI(
-    title="Meteor API",
-    version="0.1.0",
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
 )
+logger = logging.getLogger("meteor")
+
+app = FastAPI(title="Meteor API", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -64,7 +59,6 @@ DB_CONFIG = {
     "password": os.getenv("DB_PASSWORD"),
 }
 
-
 ORDERS_BASELINE_SCHEMA = {
     "order_id": "int64",
     "customer_id": "int64",
@@ -75,38 +69,30 @@ ORDERS_BASELINE_SCHEMA = {
     "city": "str",
 }
 
-
-ALLOWED_PAYMENT_STATUSES = [
-    "SUCCESS",
-    "FAILED",
-    "PENDING",
-]
+ALLOWED_PAYMENT_STATUSES = ["SUCCESS", "FAILED", "PENDING"]
 
 
 def get_connection():
+    """Create a new database connection."""
     return psycopg2.connect(**DB_CONFIG)
 
 
-def clean_row(row: dict):
-    """Convert database-specific values into JSON-safe values."""
-
+def clean_row(row: dict) -> dict:
+    """Convert PostgreSQL-specific types (Decimal, datetime) to JSON-safe types."""
     if row is None:
         return None
-
     cleaned = {}
-
     for key, value in row.items():
-
         if hasattr(value, "isoformat"):
             cleaned[key] = value.isoformat()
-
         elif str(type(value)) == "<class 'decimal.Decimal'>":
             cleaned[key] = float(value)
-
         else:
             cleaned[key] = value
-
     return cleaned
+
+
+from pydantic import BaseModel
 
 
 class IncidentCreateRequest(BaseModel):
@@ -123,132 +109,80 @@ class IncidentCreateRequest(BaseModel):
 @app.get("/health")
 def health_check():
     """Simple health check endpoint."""
-
-    return {
-        "status": "ok",
-        "service": "Meteor API",
-    }
+    return {"status": "ok", "service": "Meteor API"}
 
 
 @app.get("/datasets")
 def get_datasets():
     """Return all registered datasets."""
-
     conn = get_connection()
-
-    cursor = conn.cursor(
-        cursor_factory=psycopg2.extras.RealDictCursor
-    )
-
-    cursor.execute(
-        "SELECT * FROM datasets ORDER BY dataset_id;"
-    )
-
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cursor.execute("SELECT * FROM datasets ORDER BY dataset_id;")
     rows = cursor.fetchall()
-
     cursor.close()
     conn.close()
 
-    return {
-        "datasets": [
-            dict(row)
-            for row in rows
-        ]
-    }
+    return {"datasets": rows}
 
 
 @app.get("/datasets/{dataset_id}")
 def get_dataset_by_id(dataset_id: int):
     """Return a single dataset by its ID."""
-
     conn = get_connection()
-
-    cursor = conn.cursor(
-        cursor_factory=psycopg2.extras.RealDictCursor
-    )
-
-    cursor.execute(
-        "SELECT * FROM datasets WHERE dataset_id = %s;",
-        (dataset_id,),
-    )
-
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cursor.execute("SELECT * FROM datasets WHERE dataset_id = %s;", (dataset_id,))
     row = cursor.fetchone()
-
     cursor.close()
     conn.close()
 
     if row is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Dataset {dataset_id} not found",
-        )
+        raise HTTPException(status_code=404, detail=f"Dataset {dataset_id} not found")
 
-    return clean_row(dict(row))
+    return row
 
 
 def _load_dataset_or_404(dataset_id: int) -> dict:
-    """Look up a dataset by ID or raise 404."""
-
+    """Shared helper: look up a dataset by ID or raise 404."""
     conn = get_connection()
-
-    cursor = conn.cursor(
-        cursor_factory=psycopg2.extras.RealDictCursor
-    )
-
-    cursor.execute(
-        "SELECT * FROM datasets WHERE dataset_id = %s;",
-        (dataset_id,),
-    )
-
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cursor.execute("SELECT * FROM datasets WHERE dataset_id = %s;", (dataset_id,))
     dataset = cursor.fetchone()
-
     cursor.close()
     conn.close()
 
     if dataset is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Dataset {dataset_id} not found",
-        )
-
-    return dict(dataset)
+        raise HTTPException(status_code=404, detail=f"Dataset {dataset_id} not found")
+    return dataset
 
 
 def _load_dataset_csv(dataset_name: str) -> pd.DataFrame:
-    """Load a dataset CSV file."""
-
+    """Shared helper: load a dataset's CSV or raise 404."""
     file_path = f"data/{dataset_name}.csv"
-
     try:
         return pd.read_csv(file_path)
-
     except FileNotFoundError:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Data file not found: {file_path}",
-        )
+        raise HTTPException(status_code=404, detail=f"Data file not found: {file_path}")
 
 
 @app.get("/datasets/{dataset_id}/profile")
 def get_dataset_profile(dataset_id: int):
-    """Return structural profiling information."""
+    """Return structural profiling info for a dataset."""
+    from quality_engine.profiler import (
+        profile_structure,
+        profile_nulls,
+        profile_unique_values,
+        profile_numeric_stats,
+        profile_timestamp_columns,
+    )
 
     dataset = _load_dataset_or_404(dataset_id)
-
     df = _load_dataset_csv(dataset["name"])
 
     structure = profile_structure(df)
-
     nulls = profile_nulls(df)
-
     uniques = profile_unique_values(df)
-
     numeric_stats = profile_numeric_stats(df)
-
-    timestamp_info = profile_timestamp_columns(
-        df,
-        timestamp_columns=["order_date"],
-    )
+    timestamp_info = profile_timestamp_columns(df, timestamp_columns=["order_date"])
 
     return {
         "dataset": dataset["name"],
@@ -262,42 +196,21 @@ def get_dataset_profile(dataset_id: int):
 
 @app.get("/datasets/{dataset_id}/quality")
 def get_dataset_quality(dataset_id: int):
-    """Run all data quality checks."""
-
+    """Run quality checks on a dataset and return the results."""
     dataset = _load_dataset_or_404(dataset_id)
+    dataset_name = dataset["name"]
+    df = _load_dataset_csv(dataset_name)
 
-    df = _load_dataset_csv(dataset["name"])
+    logger.info(f"quality_check_started: dataset={dataset_name}")
 
     completeness_result = check_completeness(df)
-
-    duplicates_result = check_duplicates(
-        df,
-        primary_key="order_id",
-    )
-
-    validity_result = check_validity(
-        df,
-        "order_amount",
-    )
-
-    allowed_values_result = check_allowed_values(
-        df,
-        "payment_status",
-        ALLOWED_PAYMENT_STATUSES,
-    )
-
-    freshness_result = check_freshness(
-        df,
-        "order_date",
-    )
-
-    schema_result = check_schema(
-        df,
-        ORDERS_BASELINE_SCHEMA,
-    )
+    duplicates_result = check_duplicates(df, primary_key="order_id")
+    validity_result = check_validity(df, "order_amount")
+    allowed_values_result = check_allowed_values(df, "payment_status", ALLOWED_PAYMENT_STATUSES)
+    freshness_result = check_freshness(df, "order_date")
+    schema_result = check_schema(df, ORDERS_BASELINE_SCHEMA)
 
     weights = load_weights()
-
     score = calculate_quality_score(
         completeness_result,
         duplicates_result,
@@ -308,8 +221,10 @@ def get_dataset_quality(dataset_id: int):
         weights,
     )
 
+    logger.info(f"quality_check_completed: dataset={dataset_name} status={score['overall_status']}")
+
     return {
-        "dataset": dataset["name"],
+        "dataset": dataset_name,
         "record_count": len(df),
         "completeness": completeness_result,
         "duplicates": duplicates_result,
@@ -323,16 +238,11 @@ def get_dataset_quality(dataset_id: int):
 
 @app.get("/datasets/{dataset_id}/schema")
 def get_dataset_schema(dataset_id: int):
-    """Return schema drift check results."""
-
+    """Return schema drift check results for a dataset."""
     dataset = _load_dataset_or_404(dataset_id)
-
     df = _load_dataset_csv(dataset["name"])
 
-    schema_result = check_schema(
-        df,
-        ORDERS_BASELINE_SCHEMA,
-    )
+    schema_result = check_schema(df, ORDERS_BASELINE_SCHEMA)
 
     return {
         "dataset": dataset["name"],
@@ -342,114 +252,19 @@ def get_dataset_schema(dataset_id: int):
 
 @app.get("/datasets/{dataset_id}/anomalies")
 def get_dataset_anomalies(dataset_id: int):
-    """Check current dataset volume against its historical baseline."""
-
+    """Check a dataset's current volume against its historical baseline."""
     dataset = _load_dataset_or_404(dataset_id)
-
-    df = _load_dataset_csv(dataset["name"])
+    dataset_name = dataset["name"]
+    df = _load_dataset_csv(dataset_name)
 
     current_record_count = len(df)
+    anomaly_result = detect_volume_anomaly(dataset_name, current_record_count)
 
-    anomaly_result = detect_volume_anomaly(
-        dataset["name"],
-        current_record_count,
-    )
+    if anomaly_result.get("status") == "ANOMALY":
+        logger.warning(f"anomaly_detected: dataset={dataset_name} z_score={anomaly_result.get('z_score')}")
 
     return anomaly_result
 
-
-@app.get("/incidents")
-def list_incidents():
-    """Return all incidents."""
-
-    incidents = get_all_incidents()
-
-    return {
-        "incidents": [
-            clean_row(dict(incident))
-            for incident in incidents
-        ]
-    }
-
-
-@app.get("/incidents/{incident_id}")
-def get_incident(incident_id: str):
-    """Return a single incident."""
-
-    incident = get_incident_by_id(incident_id)
-
-    if incident is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Incident {incident_id} not found",
-        )
-
-    return clean_row(dict(incident))
-
-
-@app.post("/incidents")
-def create_new_incident(
-    payload: IncidentCreateRequest,
-):
-    """Create a new incident."""
-
-    try:
-
-        incident = create_incident(
-            dataset_id=payload.dataset_id,
-            incident_type=payload.incident_type,
-            severity=payload.severity,
-            expected=payload.expected,
-            actual=payload.actual,
-            deviation=payload.deviation,
-            root_cause=payload.root_cause,
-            confidence=payload.confidence,
-        )
-
-    except psycopg2.errors.ForeignKeyViolation:
-
-        raise HTTPException(
-            status_code=400,
-            detail=f"dataset_id {payload.dataset_id} does not exist",
-        )
-
-    return clean_row(dict(incident))
-
-
-@app.post("/incidents/{incident_id}/acknowledge")
-def acknowledge_incident_endpoint(
-    incident_id: str,
-):
-    """Mark an incident as ACKNOWLEDGED."""
-
-    result = acknowledge_incident(incident_id)
-
-    if "error" in result:
-
-        raise HTTPException(
-            status_code=404,
-            detail=result["error"],
-        )
-
-    return clean_row(dict(result))
-
-
-@app.post("/incidents/{incident_id}/resolve")
-def resolve_incident_endpoint(
-    incident_id: str,
-):
-    """Mark an incident as RESOLVED."""
-
-    result = resolve_incident(incident_id)
-
-    if "error" in result:
-
-        raise HTTPException(
-            status_code=404,
-            detail=result["error"],
-        )
-
-    return clean_row(dict(result))
 
 @app.get("/datasets/{dataset_id}/lineage")
 def get_dataset_lineage(dataset_id: int):
@@ -464,4 +279,58 @@ def get_dataset_lineage(dataset_id: int):
         "dataset": dataset_name,
         "downstream_impact": downstream,
         "affected_count": len(downstream),
-    }    
+    }
+
+
+@app.get("/incidents")
+def list_incidents():
+    """Return all incidents."""
+    incidents = get_all_incidents()
+    return {"incidents": [clean_row(dict(i)) for i in incidents]}
+
+
+@app.get("/incidents/{incident_id}")
+def get_incident(incident_id: str):
+    """Return a single incident by ID."""
+    incident = get_incident_by_id(incident_id)
+    if incident is None:
+        raise HTTPException(status_code=404, detail=f"Incident {incident_id} not found")
+    return clean_row(dict(incident))
+
+
+@app.post("/incidents")
+def create_new_incident(payload: IncidentCreateRequest):
+    """Create a new incident."""
+    try:
+        incident = create_incident(
+            dataset_id=payload.dataset_id,
+            incident_type=payload.incident_type,
+            severity=payload.severity,
+            expected=payload.expected,
+            actual=payload.actual,
+            deviation=payload.deviation,
+            root_cause=payload.root_cause,
+            confidence=payload.confidence,
+        )
+    except psycopg2.errors.ForeignKeyViolation:
+        raise HTTPException(status_code=400, detail=f"dataset_id {payload.dataset_id} does not exist")
+
+    return clean_row(dict(incident))
+
+
+@app.post("/incidents/{incident_id}/acknowledge")
+def acknowledge_incident_endpoint(incident_id: str):
+    """Mark an incident as ACKNOWLEDGED."""
+    result = acknowledge_incident(incident_id)
+    if "error" in result:
+        raise HTTPException(status_code=404, detail=result["error"])
+    return clean_row(dict(result))
+
+
+@app.post("/incidents/{incident_id}/resolve")
+def resolve_incident_endpoint(incident_id: str):
+    """Mark an incident as RESOLVED."""
+    result = resolve_incident(incident_id)
+    if "error" in result:
+        raise HTTPException(status_code=404, detail=result["error"])
+    return clean_row(dict(result))
