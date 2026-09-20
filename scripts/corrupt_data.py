@@ -3,7 +3,7 @@ Meteor - Corrupted Data Generator
 Creates intentionally broken versions of the orders dataset
 to test Meteor's data quality and anomaly detection.
 """
-
+import os
 import random
 from datetime import timedelta
 
@@ -77,6 +77,7 @@ def inject_invalid_values(df: pd.DataFrame, invalid_fraction: float = 0.05) -> p
 
 
 if __name__ == "__main__":
+    os.makedirs("data", exist_ok=True)
     clean_orders = load_clean_orders()
     print(f"Loaded {len(clean_orders)} clean rows from {SOURCE_FILE}")
 
