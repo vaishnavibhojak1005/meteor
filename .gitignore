@@ -29,3 +29,7 @@ data/processed/
 streaming/local_stream.jsonl
 
 data/quarantine/
+*.tfstate
+*.tfstate.*
+.terraform/
+*.tfvars
