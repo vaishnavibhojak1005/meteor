@@ -12,6 +12,7 @@ import pandas as pd
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pathlib import Path
 
 from quality_engine.quality import (
     check_allowed_values,
@@ -57,6 +58,7 @@ DB_CONFIG = {
     "dbname": os.getenv("DB_NAME"),
     "user": os.getenv("DB_USER"),
     "password": os.getenv("DB_PASSWORD"),
+    "sslmode": os.getenv("DB_SSLMODE", "require"),
 }
 
 ORDERS_BASELINE_SCHEMA = {
@@ -157,12 +159,15 @@ def _load_dataset_or_404(dataset_id: int) -> dict:
 
 def _load_dataset_csv(dataset_name: str) -> pd.DataFrame:
     """Shared helper: load a dataset's CSV or raise 404."""
-    file_path = f"data/{dataset_name}.csv"
+    file_path = Path(__file__).resolve().parent.parent / "data" / f"{dataset_name}.csv"
+
     try:
         return pd.read_csv(file_path)
     except FileNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Data file not found: {file_path}")
-
+        raise HTTPException(
+            status_code=404,
+            detail=f"Data file not found: {file_path}"
+        )
 
 @app.get("/datasets/{dataset_id}/profile")
 def get_dataset_profile(dataset_id: int):
